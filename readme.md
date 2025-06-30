@@ -50,4 +50,9 @@ Par défaut, il scrape les articles de l'URL définie dans target_url.
 target_url → Lien TLDR de la page à scraper.
 ```
 ## Remarques
-Veillez à ce que votre serveur Ollama soit en marche pour bénéficier de la génération IA.
+Veillez à ce que votre serveur Ollama soit en marche pour bénéficier de la génération IA.  
+  
+  
+
+  
+Fait par : LEBOURCQ Lyse
