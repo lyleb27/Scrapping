@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime
 import re
-from gtts import gTTS  # Assure-toi d'avoir installé gtts (pip install gtts)
+from gtts import gTTS  
 import os
 
 # Configuration
