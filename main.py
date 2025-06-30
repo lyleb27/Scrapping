@@ -10,8 +10,7 @@ import os
 NOTION_TOKEN = "Notion_token_ici"  # Remplace par ton token Notion
 NOTION_DATABASE_ID = "Notion_ID_ici"  # Remplace par l'ID de ta base de données Notion
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "model_ollama_ici" # Remplace par le modèle Ollama que tu utilises
-AUDIO_DIR = "audio_files"  
+OLLAMA_MODEL = "model_ollama_ici"  # Remplace par le modèle Ollama que tu utilises
 
 # Dossier pour sauvegarder les fichiers audio
 AUDIO_DIR = "audio_files"
@@ -82,8 +81,8 @@ def summarize_article(summary):
     prompt = f"""Texte original :
 {summary}
 
-Ta tâche : Fournir directement un résumé concis de 2 à 3 lignes en anglais. 
-Réponds uniquement avec le résumé. Ne fais pas d’introduction ni de conclusion :"""
+Ta tâche : Fournir directement un résumé concis de 2 à 3 lignes en français. 
+Réponds uniquement avec le résumé. Ne fais pas d'introduction ni de conclusion :"""
     
     result = query_ollama(prompt)
     return result if result else "Résumé IA indisponible"
@@ -132,8 +131,51 @@ def generate_audio(text, filename):
         tts = gTTS(text=text, lang='fr')
         tts.save(filename)
         print(f"🔊 Audio généré : {filename}")
+        return True
     except Exception as e:
         print(f"❌ Erreur génération audio : {e}")
+        return False
+
+# -------- Génération audio combiné directement --------
+def generate_combined_audio(combined_text, output_filename):
+    try:
+        # Ajouter des pauses entre les articles avec des points de suspension
+        formatted_text = combined_text.replace(". Article ", "... Article ")
+        
+        tts = gTTS(text=formatted_text, lang='fr', slow=False)
+        tts.save(output_filename)
+        print(f"🎵 Audio combiné généré : {output_filename}")
+        return True
+    except Exception as e:
+        print(f"❌ Erreur génération audio combiné : {e}")
+        return False
+
+# -------- Envoi de l'audio combiné vers Notion --------
+def send_combined_to_notion(title, summary, full_text, keywords, source_url, publication_date, audio_local_path):
+    headers = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28"
+    }
+
+    payload = {
+        "parent": {"database_id": NOTION_DATABASE_ID},
+        "properties": {
+            "Titre": {"title": [{"text": {"content": title[:200]}}]},
+            "Résumé": {"rich_text": [{"text": {"content": summary[:2000]}}]},
+            "Résumé IA": {"rich_text": [{"text": {"content": full_text[:2000]}}]},
+            "Catégorie(s) IA": {"multi_select": [{"name": kw} for kw in keywords]},
+            "URL": {"url": source_url},
+            "Date de parution": {"date": {"start": publication_date}},
+            "Audio Résumé": {"rich_text": [{"text": {"content": audio_local_path}}]}
+        }
+    }
+
+    response = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    if response.status_code in (200, 201):
+        print(f"✅ Audio combiné envoyé à Notion : {title[:50]}...")
+    else:
+        print(f"❌ Erreur Notion (combiné) : {response.status_code} - {response.text}")
 
 # -------- Envoi vers Notion --------
 def send_to_notion(title, summary, summary_ia, keywords, source_url, publication_date, audio_local_path):
@@ -171,6 +213,12 @@ def process_articles(url):
     articles = extract_articles(url)
     print(f"\n📰 {len(articles)} articles trouvés.\n")
 
+    # Liste pour stocker les fichiers audio individuels (optionnel)
+    individual_audio_files = []
+    
+    # Texte combiné pour l'audio final
+    combined_text_parts = []
+
     for idx, article in enumerate(articles, 1):
         title = article["title"]
         summary = article["summary"]
@@ -188,8 +236,14 @@ def process_articles(url):
             print(f"   📑 Résumé IA : {summary_ia}")
             print(f"   🏷️ Mots-clés : {keywords_to_use}")
 
+            # Création du texte pour l'audio avec le format demandé
+            audio_text = f"Article {idx} du {category}. {summary_ia}"
+            combined_text_parts.append(audio_text)
+
+            # Génération de l'audio individuel
             audio_filename = os.path.join(AUDIO_DIR, f"article_{idx}_{category}.mp3")
-            generate_audio(summary_ia, audio_filename)
+            if generate_audio(audio_text, audio_filename):
+                individual_audio_files.append(audio_filename)
 
             send_to_notion(title, summary, summary_ia, keywords_to_use, url, publication_date, audio_filename)
 
@@ -199,6 +253,26 @@ def process_articles(url):
             print(f"❌ Erreur traitement : {e}")
             continue
 
+    # Génération de l'audio combiné
+    if combined_text_parts:
+        # Création du texte complet avec séparateurs naturels
+        full_combined_text = " ".join(combined_text_parts)
+        
+        # Génération de l'audio combiné unique
+        combined_audio_filename = os.path.join(AUDIO_DIR, f"combined_{category}_{publication_date}.mp3")
+        if generate_combined_audio(full_combined_text, combined_audio_filename):
+            print(f"✅ Audio combiné créé : {combined_audio_filename}")
+            
+            # Envoyer l'audio combiné à Notion comme entrée séparée
+            send_combined_to_notion(f"Résumé Audio {category.title()} - {publication_date}", 
+                                  f"Audio combiné de {len(articles)} articles du {category}", 
+                                  full_combined_text, 
+                                  [category], 
+                                  url, 
+                                  publication_date, 
+                                  combined_audio_filename)
+        
+
 if __name__ == "__main__":
-    target_url = "https://tldr.tech/crypto/2025-06-27"  # Modifie l'URL selon besoin
+    target_url = "https://tldr.tech/marketing/2025-06-27"  # Modifie l'URL selon besoin
     process_articles(target_url)
