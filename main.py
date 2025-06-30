@@ -7,10 +7,11 @@ from gtts import gTTS  # Assure-toi d'avoir installé gtts (pip install gtts)
 import os
 
 # Configuration
-NOTION_TOKEN = "Notion_token_ici"  # Remplace par ton token Notion
-NOTION_DATABASE_ID = "Notion_ID_ici"  # Remplace par l'ID de ta base de données Notion
+NOTION_TOKEN = "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"
+NOTION_DATABASE_ID = "21e3342b-9620-8050-89a4-d66f5e59441b"
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "model_ollama_ici"  # Remplace par le modèle Ollama que tu utilises
+OLLAMA_MODEL = "gemma3:latest" # Remplace par le modèle Ollama que tu utilises
+AUDIO_DIR = "audio_files"  
 
 # Dossier pour sauvegarder les fichiers audio
 AUDIO_DIR = "audio_files"
@@ -118,6 +119,13 @@ def extract_date_from_url(url):
     else:
         return datetime.now().strftime("%Y-%m-%d")
 
+# -------- Extraction de la catégorie depuis l'URL --------
+def extract_category_from_url(url):
+    match = re.search(r"https?://[^/]+/([^/]+)/\d{4}-\d{2}-\d{2}", url)
+    if match:
+        return match.group(1)
+    return "default"
+
 # -------- Génération audio avec gTTS --------
 def generate_audio(text, filename):
     try:
@@ -158,6 +166,7 @@ def send_to_notion(title, summary, summary_ia, keywords, source_url, publication
 def process_articles(url):
     ollama_available = is_ollama_available()
     publication_date = extract_date_from_url(url)
+    category = extract_category_from_url(url)
 
     articles = extract_articles(url)
     print(f"\n📰 {len(articles)} articles trouvés.\n")
@@ -179,8 +188,7 @@ def process_articles(url):
             print(f"   📑 Résumé IA : {summary_ia}")
             print(f"   🏷️ Mots-clés : {keywords_to_use}")
 
-            # Génération audio
-            audio_filename = os.path.join(AUDIO_DIR, f"article_{idx}.mp3")
+            audio_filename = os.path.join(AUDIO_DIR, f"article_{idx}_{category}.mp3")
             generate_audio(summary_ia, audio_filename)
 
             send_to_notion(title, summary, summary_ia, keywords_to_use, url, publication_date, audio_filename)
@@ -192,5 +200,5 @@ def process_articles(url):
             continue
 
 if __name__ == "__main__":
-    target_url = "https://tldr.tech/marketing/2025-06-27"  # Modifie l'URL selon besoin
+    target_url = "https://tldr.tech/crypto/2025-06-27"  # Modifie l'URL selon besoin
     process_articles(target_url)
