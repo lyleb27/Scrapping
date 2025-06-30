@@ -7,10 +7,10 @@ from gtts import gTTS
 import os
 
 # Configuration
-NOTION_TOKEN = "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"
-NOTION_DATABASE_ID = "21e3342b-9620-8050-89a4-d66f5e59441b"
+NOTION_TOKEN = "Notion_token_ici"  # Remplace par ton token Notion
+NOTION_DATABASE_ID = "Notion_ID_ici"  # Remplace par l'ID de ta base de données Notion
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:latest" # Remplace par le modèle Ollama que tu utilises
+OLLAMA_MODEL = "model_ollama_ici" # Remplace par le modèle Ollama que tu utilises
 AUDIO_DIR = "audio_files"  
 
 # Dossier pour sauvegarder les fichiers audio
