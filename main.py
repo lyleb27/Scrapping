@@ -3,12 +3,18 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime
 import re
+from gtts import gTTS  # Assure-toi d'avoir installé gtts (pip install gtts)
+import os
 
 # Configuration
-NOTION_TOKEN = "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"
-NOTION_DATABASE_ID = "21e3342b-9620-8050-89a4-d66f5e59441b"
+NOTION_TOKEN = "Notion_token_ici"  # Remplace par ton token Notion
+NOTION_DATABASE_ID = "Notion_ID_ici"  # Remplace par l'ID de ta base de données Notion
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:latest"
+OLLAMA_MODEL = "model_ollama_ici"  # Remplace par le modèle Ollama que tu utilises
+
+# Dossier pour sauvegarder les fichiers audio
+AUDIO_DIR = "audio_files"
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Liste dynamique des mots-clés utilisés pendant l'exécution
 existing_keywords = set()
@@ -75,7 +81,7 @@ def summarize_article(summary):
     prompt = f"""Texte original :
 {summary}
 
-Ta tâche : Fournir directement un résumé concis de 2 à 3 lignes. 
+Ta tâche : Fournir directement un résumé concis de 2 à 3 lignes en anglais. 
 Réponds uniquement avec le résumé. Ne fais pas d’introduction ni de conclusion :"""
     
     result = query_ollama(prompt)
@@ -85,13 +91,12 @@ Réponds uniquement avec le résumé. Ne fais pas d’introduction ni de conclus
 def generate_keywords(summary_ia):
     prompt = f"""Voici un résumé : {summary_ia}
 
-Donne trois mots-clés courts et pertinents séparés par une virgule, sans explication :"""
+En anglais, donne trois mots-clés courts et pertinents séparés par une virgule, sans explication :"""
     result = query_ollama(prompt)
     if not result:
         return []
 
-    # Nettoyage basique des mots-clés
-    keywords = [kw.strip().lower() for kw in result.split(',') if kw.strip()]
+    keywords = [kw.strip() for kw in result.split(',') if kw.strip()]
     return keywords
 
 # -------- Gestion des catégories dynamiques --------
@@ -113,8 +118,17 @@ def extract_date_from_url(url):
     else:
         return datetime.now().strftime("%Y-%m-%d")
 
+# -------- Génération audio avec gTTS --------
+def generate_audio(text, filename):
+    try:
+        tts = gTTS(text=text, lang='fr')
+        tts.save(filename)
+        print(f"🔊 Audio généré : {filename}")
+    except Exception as e:
+        print(f"❌ Erreur génération audio : {e}")
+
 # -------- Envoi vers Notion --------
-def send_to_notion(title, summary, summary_ia, keywords, source_url, publication_date):
+def send_to_notion(title, summary, summary_ia, keywords, source_url, publication_date, audio_local_path):
     headers = {
         "Authorization": f"Bearer {NOTION_TOKEN}",
         "Content-Type": "application/json",
@@ -129,7 +143,8 @@ def send_to_notion(title, summary, summary_ia, keywords, source_url, publication
             "Résumé IA": {"rich_text": [{"text": {"content": summary_ia[:2000]}}]},
             "Catégorie(s) IA": {"multi_select": [{"name": kw} for kw in keywords]},
             "URL": {"url": source_url},
-            "Date de parution": {"date": {"start": publication_date}}
+            "Date de parution": {"date": {"start": publication_date}},
+            "Audio Résumé": {"rich_text": [{"text": {"content": audio_local_path}}]}
         }
     }
 
@@ -164,7 +179,11 @@ def process_articles(url):
             print(f"   📑 Résumé IA : {summary_ia}")
             print(f"   🏷️ Mots-clés : {keywords_to_use}")
 
-            send_to_notion(title, summary, summary_ia, keywords_to_use, url, publication_date)
+            # Génération audio
+            audio_filename = os.path.join(AUDIO_DIR, f"article_{idx}.mp3")
+            generate_audio(summary_ia, audio_filename)
+
+            send_to_notion(title, summary, summary_ia, keywords_to_use, url, publication_date, audio_filename)
 
             time.sleep(1)
 
@@ -173,5 +192,5 @@ def process_articles(url):
             continue
 
 if __name__ == "__main__":
-    target_url = "https://tldr.tech/marketing/2025-06-27"  # Change selon besoin
+    target_url = "https://tldr.tech/marketing/2025-06-27"  # Modifie l'URL selon besoin
     process_articles(target_url)
