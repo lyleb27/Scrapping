@@ -18,7 +18,6 @@ def extract_articles(url):
     articles = []
 
     for article in soup.select('article.mt-3'):
-        # Titre dans le <h3> contenu dans le <a>
         a_tag = article.find('a', class_='font-bold')
         title = ""
         if a_tag:
@@ -29,13 +28,11 @@ def extract_articles(url):
         if not title or len(title) <= 5:
             continue
 
-        # Résumé dans le div.newsletter-html, concaténation des <p>
         summary = ""
         summary_div = article.find('div', class_='newsletter-html')
         if summary_div:
             paragraphs = summary_div.find_all('p')
             summary = "\n\n".join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
-
             if not summary:
                 summary = summary_div.get_text(strip=True)
 
@@ -70,27 +67,19 @@ def query_ollama(prompt):
         print(f"⚠️ Erreur Ollama : {e}")
         return None
 
-def categorize_article(article_title):
-    prompt = f"""Catégorise cet article en UNE SEULE catégorie parmi :
-- Stratégie Marketing
-- Innovation Produit
-- Réseaux Sociaux
-- Analytics/Data
-- E-commerce
-- Contenu/SEO
-- Tendances Tech
-- Autre
-
-Article : {article_title}
-
-Réponds uniquement avec le nom exact de la catégorie :"""
-    result = query_ollama(prompt)
-    return result if result else "Inconnu"
-
+# -------- Génération du résumé IA --------
 def generate_ia_summary(text):
-    prompt = f"Résume ce texte en 2 à 3 phrases claires et concises :\n\n{text}\n\n Je ne veux que le résumé sans autres informations ou exolications."
+    prompt = f"""Fais un résumé concis de 2 à 3 lignes de ce texte :\n\n{text}\n\n Je veux un résumé sans informations ou explications supplémentaires, juste le résumé sans contexte."""
     result = query_ollama(prompt)
     return result if result else "Résumé IA indisponible"
+
+# -------- Extraction de 3 mots-clés --------
+def extract_keywords(text):
+    prompt = f"""Donne-moi 3 mots-clés pertinents, séparés par des virgules, en fonction de ce résumé :\n\n{text}\n\nMots-clés :"""
+    result = query_ollama(prompt)
+    if result:
+        return ", ".join([kw.strip() for kw in result.split(",")[:3]])
+    return "Non défini"
 
 # -------- Extraction de la date depuis l'URL --------
 def extract_date_from_url(url):
@@ -101,7 +90,7 @@ def extract_date_from_url(url):
         return datetime.now().strftime("%Y-%m-%d")
 
 # -------- Envoi vers Notion --------
-def send_to_notion(title, ia_summary, category, source_url, publication_date, original_summary=""):
+def send_to_notion(title, ia_summary, category, source_url, publication_date, original_summary):
     headers = {
         "Authorization": f"Bearer {NOTION_TOKEN}",
         "Content-Type": "application/json",
@@ -113,7 +102,7 @@ def send_to_notion(title, ia_summary, category, source_url, publication_date, or
         "properties": {
             "Titre": {"title": [{"text": {"content": title[:200]}}]},
             "Résumé IA": {"rich_text": [{"text": {"content": ia_summary[:2000]}}]},
-            "Catégorie(s) IA": {"rich_text": [{"text": {"content": category}}]},
+            "Catégorie(s) IA": {"multi_select": [{"name": kw.strip()} for kw in category.split(",")]},  # mots-clés ici
             "URL": {"url": source_url},
             "Date de parution": {"date": {"start": publication_date}},
             "Résumé": {"rich_text": [{"text": {"content": original_summary[:2000]}}]}
@@ -141,18 +130,18 @@ def process_articles(url):
 
         try:
             if ollama_available:
-                category = categorize_article(title)
                 ia_summary = generate_ia_summary(summary)
+                category = extract_keywords(ia_summary)
             else:
-                category = "Inconnu"
                 ia_summary = "Résumé IA indisponible"
+                category = "Non défini"
 
             if not summary:
                 summary = "Résumé indisponible"
 
             print(f"   📄 Résumé site : {summary}")
             print(f"   🧠 Résumé IA : {ia_summary}")
-            print(f"   🗂️ Catégorie IA : {category}")
+            print(f"   🗂️ Catégorie IA (mots-clés) : {category}")
 
             send_to_notion(title, ia_summary, category, url, publication_date, original_summary=summary)
 
@@ -163,5 +152,5 @@ def process_articles(url):
             continue
 
 if __name__ == "__main__":
-    target_url = "https://tldr.tech/marketing/2025-06-26"  # Change selon besoin
+    target_url = "https://tldr.tech/marketing/2025-06-27"  # Change selon besoin
     process_articles(target_url)
