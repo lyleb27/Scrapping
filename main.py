@@ -10,6 +10,9 @@ NOTION_DATABASE_ID = "21e3342b-9620-8050-89a4-d66f5e59441b"
 OLLAMA_URL = "http://localhost:11434"
 OLLAMA_MODEL = "gemma3:latest"
 
+# Liste dynamique des mots-clés utilisés pendant l'exécution
+existing_keywords = set()
+
 # -------- Extraction des articles avec résumé du site --------
 def extract_articles(url):
     response = requests.get(url)
@@ -24,7 +27,7 @@ def extract_articles(url):
             h3 = a_tag.find('h3')
             if h3:
                 title = h3.get_text(strip=True)
-        
+
         if not title or len(title) <= 5:
             continue
 
@@ -67,19 +70,40 @@ def query_ollama(prompt):
         print(f"⚠️ Erreur Ollama : {e}")
         return None
 
-# -------- Génération du résumé IA --------
-def generate_ia_summary(text):
-    prompt = f"""Fais un résumé concis de 2 à 3 lignes de ce texte :\n\n{text}\n\n Je veux un résumé sans informations ou explications supplémentaires, juste le résumé sans contexte."""
+# -------- Résumé IA --------
+def summarize_article(summary):
+    prompt = f"""Texte original :
+{summary}
+
+Ta tâche : Fournir directement un résumé concis de 2 à 3 lignes. 
+Réponds uniquement avec le résumé. Ne fais pas d’introduction ni de conclusion :"""
+    
     result = query_ollama(prompt)
     return result if result else "Résumé IA indisponible"
 
-# -------- Extraction de 3 mots-clés --------
-def extract_keywords(text):
-    prompt = f"""Donne-moi 3 mots-clés pertinents, séparés par des virgules, en fonction de ce résumé :\n\n{text}\n\nMots-clés :"""
+# -------- Génération des mots-clés --------
+def generate_keywords(summary_ia):
+    prompt = f"""Voici un résumé : {summary_ia}
+
+Donne trois mots-clés courts et pertinents séparés par une virgule, sans explication :"""
     result = query_ollama(prompt)
-    if result:
-        return ", ".join([kw.strip() for kw in result.split(",")[:3]])
-    return "Non défini"
+    if not result:
+        return []
+
+    # Nettoyage basique des mots-clés
+    keywords = [kw.strip().lower() for kw in result.split(',') if kw.strip()]
+    return keywords
+
+# -------- Gestion des catégories dynamiques --------
+def get_or_add_keywords(keywords):
+    final_keywords = []
+    for kw in keywords:
+        if kw.lower() in existing_keywords:
+            final_keywords.append(kw)
+        else:
+            existing_keywords.add(kw.lower())
+            final_keywords.append(kw)
+    return final_keywords
 
 # -------- Extraction de la date depuis l'URL --------
 def extract_date_from_url(url):
@@ -90,7 +114,7 @@ def extract_date_from_url(url):
         return datetime.now().strftime("%Y-%m-%d")
 
 # -------- Envoi vers Notion --------
-def send_to_notion(title, ia_summary, category, source_url, publication_date, original_summary):
+def send_to_notion(title, summary, summary_ia, keywords, source_url, publication_date):
     headers = {
         "Authorization": f"Bearer {NOTION_TOKEN}",
         "Content-Type": "application/json",
@@ -101,11 +125,11 @@ def send_to_notion(title, ia_summary, category, source_url, publication_date, or
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
             "Titre": {"title": [{"text": {"content": title[:200]}}]},
-            "Résumé IA": {"rich_text": [{"text": {"content": ia_summary[:2000]}}]},
-            "Catégorie(s) IA": {"multi_select": [{"name": kw.strip()} for kw in category.split(",")]},  # mots-clés ici
+            "Résumé": {"rich_text": [{"text": {"content": summary[:2000]}}]},
+            "Résumé IA": {"rich_text": [{"text": {"content": summary_ia[:2000]}}]},
+            "Catégorie(s) IA": {"multi_select": [{"name": kw} for kw in keywords]},
             "URL": {"url": source_url},
-            "Date de parution": {"date": {"start": publication_date}},
-            "Résumé": {"rich_text": [{"text": {"content": original_summary[:2000]}}]}
+            "Date de parution": {"date": {"start": publication_date}}
         }
     }
 
@@ -129,21 +153,18 @@ def process_articles(url):
         print(f"{idx}. {title}")
 
         try:
-            if ollama_available:
-                ia_summary = generate_ia_summary(summary)
-                category = extract_keywords(ia_summary)
-            else:
-                ia_summary = "Résumé IA indisponible"
-                category = "Non défini"
-
             if not summary:
                 summary = "Résumé indisponible"
 
-            print(f"   📄 Résumé site : {summary}")
-            print(f"   🧠 Résumé IA : {ia_summary}")
-            print(f"   🗂️ Catégorie IA (mots-clés) : {category}")
+            summary_ia = summarize_article(summary)
+            keywords_generated = generate_keywords(summary_ia)
+            keywords_to_use = get_or_add_keywords(keywords_generated)
 
-            send_to_notion(title, ia_summary, category, url, publication_date, original_summary=summary)
+            print(f"   📄 Résumé site : {summary}")
+            print(f"   📑 Résumé IA : {summary_ia}")
+            print(f"   🏷️ Mots-clés : {keywords_to_use}")
+
+            send_to_notion(title, summary, summary_ia, keywords_to_use, url, publication_date)
 
             time.sleep(1)
 
